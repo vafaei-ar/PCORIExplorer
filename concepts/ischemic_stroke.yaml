@@ -1,0 +1,16 @@
+name: ischemic_stroke
+description: Exploratory ischemic stroke concept for PCORnet CDM code search.
+version: 0.1
+status: exploratory_not_validated
+codes:
+  diagnosis:
+    icd10:
+      include_prefixes:
+        - I63
+    icd9:
+      include_prefixes:
+        - "433"
+        - "434"
+        - "436"
+notes:
+  - Validate diagnosis position and encounter type before scientific use.
