@@ -23,6 +23,13 @@ def read_sas_metadata(path: Path) -> tuple[int | None, list[str], dict[str, Any]
     return getattr(meta, "number_rows", None), columns, {"labels": labels}
 
 
+def dataframe_to_markdown_safe(df: pd.DataFrame) -> str:
+    try:
+        return df.to_markdown(index=False)
+    except ImportError:
+        return "```text\n" + df.to_string(index=False) + "\n```"
+
+
 def audit(data_root: Path, out: Path) -> None:
     out.mkdir(parents=True, exist_ok=True)
     table_rows = []
@@ -50,7 +57,8 @@ def audit(data_root: Path, out: Path) -> None:
     table_df.to_csv(out / "table_inventory.csv", index=False)
     column_df.to_csv(out / "column_inventory.csv", index=False)
     (out / "table_inventory.json").write_text(table_df.to_json(orient="records", indent=2), encoding="utf-8")
-    lines = ["# PCORI CDM SAS audit summary", "", f"Data root: `{data_root}`", f"Tables found: {len(table_df)}", f"Total SAS size GB: {table_df['sas_size_mb'].sum() / 1024:.2f}", "", table_df.to_markdown(index=False)]
+    summary_table = dataframe_to_markdown_safe(table_df)
+    lines = ["# PCORI CDM SAS audit summary", "", f"Data root: `{data_root}`", f"Tables found: {len(table_df)}", f"Total SAS size GB: {table_df['sas_size_mb'].sum() / 1024:.2f}", "", summary_table]
     (out / "audit_summary.md").write_text("\n".join(lines), encoding="utf-8")
     (out / "manifest.json").write_text(json.dumps({"data_root": str(data_root), "tables": table_rows}, indent=2), encoding="utf-8")
     print(f"Wrote audit outputs to {out}")
