@@ -1,0 +1,8 @@
+# Copy this file to dashboard/config/users.yaml.
+# Generate password hashes with:
+#   python scripts/hash_password.py
+users:
+  alireza:
+    name: Alireza Vafaei Sadr
+    role: admin
+    password_hash: "pbkdf2_sha256$390000$REPLACE_SALT$REPLACE_HASH"
