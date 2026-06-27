@@ -1,0 +1,38 @@
+app:
+  title: PCORIExplorer
+  subtitle: Aggregate PCORnet CDM exploration dashboard
+  institution: Penn State College of Medicine
+  default_data_root: ../data/CDM61_Feb022026
+  default_parquet_root: ../data/pcori_parquet
+  default_audit_dir: outputs/audit
+
+auth:
+  enabled: false
+  users_file: dashboard/config/users.yaml
+  session_timeout_minutes: 720
+
+privacy:
+  suppress_small_cells: true
+  small_cell_threshold: 11
+  suppress_complementary_cells: true
+  allow_raw_rows: false
+  allow_record_export: false
+  hidden_identifier_columns:
+    - PATID
+    - ENCOUNTERID
+    - PROVIDERID
+    - MEDADMINID
+    - PRESCRIBINGID
+    - DISPENSINGID
+    - LAB_RESULT_CM_ID
+    - PROCEDURESID
+    - DIAGNOSISID
+    - CONDITIONID
+    - VITALID
+    - VX_RECORD_ID
+
+performance:
+  max_columns_for_missingness: 40
+  max_top_values: 30
+  duckdb_memory_limit: 8GB
+  cache_ttl_seconds: 3600
