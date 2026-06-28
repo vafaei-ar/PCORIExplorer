@@ -28,20 +28,45 @@ outputs/audit/manifest.json
 
 ## Convert SAS to Parquet
 
-```bash
-python scripts/convert_sas_to_parquet.py \
-  --data-root ../data/CDM61_Feb022026 \
-  --parquet-root ../data/pcori_parquet
-```
+Do not start with all tables. This datamart is large. Use staged conversion.
 
-For a first test:
+Small and core tables first:
 
 ```bash
 python scripts/convert_sas_to_parquet.py \
   --data-root ../data/CDM61_Feb022026 \
   --parquet-root ../data/pcori_parquet \
-  --tables demographic encounter diagnosis
+  --tables demographic death death_cause encounter condition immunization obs_gen
 ```
+
+Then analytic code tables:
+
+```bash
+python scripts/convert_sas_to_parquet.py \
+  --data-root ../data/CDM61_Feb022026 \
+  --parquet-root ../data/pcori_parquet \
+  --tables diagnosis procedures vital dispensing med_admin
+```
+
+Largest tables last:
+
+```bash
+python scripts/convert_sas_to_parquet.py \
+  --data-root ../data/CDM61_Feb022026 \
+  --parquet-root ../data/pcori_parquet \
+  --tables lab_result_cm obs_clin prescribing
+```
+
+## Verify Parquet row counts
+
+```bash
+python scripts/verify_parquet_counts.py \
+  --parquet-root ../data/pcori_parquet \
+  --audit-table outputs/audit/table_inventory.csv \
+  --out outputs/audit/parquet_verify.csv
+```
+
+Send back `outputs/audit/parquet_verify.csv` after conversion.
 
 ## Run dashboard
 
