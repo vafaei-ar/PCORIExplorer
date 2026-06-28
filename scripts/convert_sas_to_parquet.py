@@ -4,9 +4,25 @@ from __future__ import annotations
 import argparse
 from pathlib import Path
 
-import pandas as pd
 import pyarrow as pa
 import pyarrow.parquet as pq
+
+
+def empty_table_from_sas_metadata(path: Path) -> pa.Table:
+    try:
+        import pyreadstat
+    except ImportError as exc:
+        raise SystemExit("pyreadstat is required. Install with: pip install pyreadstat") from exc
+    try:
+        _, meta = pyreadstat.read_sas7bdat(str(path), metadataonly=True)
+    except TypeError:
+        _, meta = pyreadstat.read_sas7bdat(str(path), row_limit=0)
+    columns = list(getattr(meta, "column_names", []) or [])
+    if not columns:
+        columns = ["_EMPTY_TABLE_PLACEHOLDER"]
+    schema = pa.schema([pa.field(str(col), pa.string()) for col in columns])
+    arrays = [pa.array([], type=pa.string()) for _ in columns]
+    return pa.Table.from_arrays(arrays, schema=schema)
 
 
 def convert_one(path: Path, out_path: Path, chunksize: int) -> None:
@@ -34,7 +50,7 @@ def convert_one(path: Path, out_path: Path, chunksize: int) -> None:
         if writer is not None:
             writer.close()
     if writer is None:
-        empty = pa.Table.from_pandas(pd.DataFrame(), preserve_index=False)
+        empty = empty_table_from_sas_metadata(path)
         pq.write_table(empty, out_path, compression="zstd")
     print(f"Finished {path.name} -> {out_path} ({total_rows:,} rows)")
 
