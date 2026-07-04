@@ -31,6 +31,19 @@ def get_connection(memory_limit: str):
     return connect({"performance": {"duckdb_memory_limit": memory_limit}})
 
 
+def compact_int(value: int | float | None) -> str:
+    if value is None or pd.isna(value):
+        return ""
+    value = float(value)
+    if abs(value) >= 1_000_000_000:
+        return f"{value / 1_000_000_000:.2f}B"
+    if abs(value) >= 1_000_000:
+        return f"{value / 1_000_000:.1f}M"
+    if abs(value) >= 1_000:
+        return f"{value / 1_000:.1f}K"
+    return f"{value:.0f}"
+
+
 def parse_prefixes(text: str) -> list[str]:
     prefixes = []
     for item in text.replace(",", "\n").splitlines():
@@ -47,14 +60,16 @@ def prefix_condition(column: str, prefixes: list[str]) -> str:
     return "(" + " or ".join(clauses) + ")"
 
 
-def date_condition(column: str | None, start_date, end_date) -> str:
+def date_condition(column: str | None, start_text: str, end_text: str) -> str:
     if not column:
         return "1=1"
     clauses = []
-    if start_date:
-        clauses.append(f"cast({quote_ident(column)} as date) >= date {sql_string(start_date.isoformat())}")
-    if end_date:
-        clauses.append(f"cast({quote_ident(column)} as date) <= date {sql_string(end_date.isoformat())}")
+    start_text = (start_text or "").strip()
+    end_text = (end_text or "").strip()
+    if start_text:
+        clauses.append(f"cast({quote_ident(column)} as date) >= date {sql_string(start_text)}")
+    if end_text:
+        clauses.append(f"cast({quote_ident(column)} as date) <= date {sql_string(end_text)}")
     return " and ".join(clauses) if clauses else "1=1"
 
 
@@ -74,7 +89,9 @@ def safe_display(df: pd.DataFrame, settings: dict) -> pd.DataFrame:
     )
 
 
-def get_distinct_values(con, expr: str, column: str, limit: int = 200) -> list[str]:
+def get_distinct_values(con, expr: str, column: str | None, limit: int = 200) -> list[str]:
+    if not column:
+        return []
     sql = f"""
     select cast({quote_ident(column)} as varchar) as value, count(*) as n
     from {expr}
@@ -125,23 +142,27 @@ def main() -> None:
         prefixes = parse_prefixes(prefixes_text)
         st.caption("Prefixes are matched as starts-with, e.g., I63 matches I63.*")
 
-        dx_type_values = get_distinct_values(con, diagnosis_expr, dx_type_col) if dx_type_col else []
+        dx_type_values = get_distinct_values(con, diagnosis_expr, dx_type_col)
         selected_dx_types = st.multiselect("DX_TYPE filter", dx_type_values, default=[])
         use_dates = st.checkbox("Filter by diagnosis date", value=False)
-        start_date = st.date_input("Start date", value=None) if use_dates else None
-        end_date = st.date_input("End date", value=None) if use_dates else None
-        run_breakdowns = st.checkbox("Run demographic and encounter breakdowns", value=True)
+        start_text = st.text_input("Start date YYYY-MM-DD", value="2010-01-01") if use_dates else ""
+        end_text = st.text_input("End date YYYY-MM-DD", value="2026-12-31") if use_dates else ""
+        run_breakdowns = st.checkbox("Run demographic and encounter breakdowns", value=False)
+        run_query = st.button("Run cohort", type="primary")
 
     st.info(
         "This page returns aggregate counts only. It does not display patient identifiers or export row-level data. "
-        "Counts are exploratory and depend on the chosen code prefixes and date filters."
+        "Counts are exploratory and depend on the chosen code prefixes and filters."
     )
+    st.warning("This is not a validated computable phenotype. Treat it as a fast code-count explorer for feasibility and QA.")
 
+    if not run_query:
+        st.stop()
     if not prefixes:
         st.warning("Enter at least one code prefix or choose a preset.")
         st.stop()
 
-    where_parts = [prefix_condition(dx_col, prefixes), optional_filter(dx_type_col, selected_dx_types), date_condition(dx_date_col, start_date, end_date)]
+    where_parts = [prefix_condition(dx_col, prefixes), optional_filter(dx_type_col, selected_dx_types), date_condition(dx_date_col, start_text, end_text)]
     where_sql = " and ".join(f"({x})" for x in where_parts if x)
 
     distinct_patient_expr = f"approx_count_distinct({quote_ident(patid_col)})"
@@ -167,20 +188,26 @@ def main() -> None:
         st.warning("No rows returned.")
         st.stop()
 
+    diagnosis_rows = int(summary.loc[0, "diagnosis_rows"])
+    approx_patients = int(summary.loc[0, "approx_patients"])
+    approx_encounters = summary.loc[0, "approx_encounters"]
+
     c1, c2, c3, c4 = st.columns(4)
-    c1.metric("Diagnosis rows", f"{int(summary.loc[0, 'diagnosis_rows']):,}")
-    c2.metric("Approx patients", f"{int(summary.loc[0, 'approx_patients']):,}")
-    if pd.notna(summary.loc[0, "approx_encounters"]):
-        c3.metric("Approx encounters", f"{int(summary.loc[0, 'approx_encounters']):,}")
+    c1.metric("Diagnosis rows", compact_int(diagnosis_rows))
+    c2.metric("Approx patients", compact_int(approx_patients))
+    if pd.notna(approx_encounters):
+        c3.metric("Approx encounters", compact_int(int(approx_encounters)))
     c4.metric("Date span", f"{summary.loc[0, 'min_dx_date']} to {summary.loc[0, 'max_dx_date']}")
+    st.caption(f"Full counts: {diagnosis_rows:,} diagnosis rows; approx {approx_patients:,} patients.")
 
     st.subheader("Cohort definition")
-    st.write({"preset": preset, "prefixes": prefixes, "dx_type_filter": selected_dx_types, "date_column": dx_date_col})
+    st.json({"preset": preset, "prefixes": prefixes, "dx_type_filter": selected_dx_types, "date_column": dx_date_col, "date_filter": [start_text, end_text] if use_dates else []})
 
+    dx_type_expr = f"cast({quote_ident(dx_type_col)} as varchar)" if dx_type_col else "''"
     code_sql = f"""
     select
       cast({quote_ident(dx_col)} as varchar) as dx,
-      {f'cast({quote_ident(dx_type_col)} as varchar)' if dx_type_col else "''"} as dx_type,
+      {dx_type_expr} as dx_type,
       count(*) as diagnosis_rows,
       approx_count_distinct({quote_ident(patid_col)}) as approx_patients
     from {diagnosis_expr}
