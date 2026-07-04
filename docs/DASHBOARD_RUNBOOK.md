@@ -68,11 +68,46 @@ python scripts/verify_parquet_counts.py \
 
 Send back `outputs/audit/parquet_verify.csv` after conversion.
 
+## Profile converted Parquet data
+
+Run aggregate profiling after all converted tables verify successfully. This creates dashboard-ready summaries without exporting raw rows.
+
+```bash
+python scripts/profile_parquet_tables.py \
+  --parquet-root ../data/pcori_parquet \
+  --verify outputs/audit/parquet_verify.csv \
+  --out outputs/profile \
+  --memory-limit 64GB
+```
+
+The profiling output files are:
+
+```text
+outputs/profile/table_profile.csv
+outputs/profile/date_ranges.csv
+outputs/profile/key_missingness.csv
+outputs/profile/top_values.csv
+outputs/profile/profile_summary.md
+```
+
+For a faster smoke test:
+
+```bash
+python scripts/profile_parquet_tables.py \
+  --parquet-root ../data/pcori_parquet \
+  --verify outputs/audit/parquet_verify.csv \
+  --out outputs/profile \
+  --tables demographic encounter diagnosis \
+  --memory-limit 32GB
+```
+
 ## Run dashboard
 
 ```bash
 streamlit run dashboard/app.py
 ```
+
+Open the Data profile page after `outputs/profile` exists.
 
 ## Optional path overrides
 
@@ -80,6 +115,7 @@ streamlit run dashboard/app.py
 export PCORI_DATA_ROOT=/absolute/path/to/CDM61_Feb022026
 export PCORI_PARQUET_ROOT=/absolute/path/to/pcori_parquet
 export PCORI_AUDIT_DIR=/absolute/path/to/audit
+export PCORI_PROFILE_DIR=/absolute/path/to/profile
 streamlit run dashboard/app.py
 ```
 
