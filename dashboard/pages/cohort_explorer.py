@@ -44,6 +44,15 @@ def compact_int(value: int | float | None) -> str:
     return f"{value:.0f}"
 
 
+def fmt_date(value) -> str:
+    if value is None or pd.isna(value):
+        return ""
+    try:
+        return pd.to_datetime(value).strftime("%Y-%m-%d")
+    except Exception:
+        return str(value)
+
+
 def parse_prefixes(text: str) -> list[str]:
     prefixes = []
     for item in text.replace(",", "\n").splitlines():
@@ -191,19 +200,54 @@ def main() -> None:
     diagnosis_rows = int(summary.loc[0, "diagnosis_rows"])
     approx_patients = int(summary.loc[0, "approx_patients"])
     approx_encounters = summary.loc[0, "approx_encounters"]
+    min_date = fmt_date(summary.loc[0, "min_dx_date"])
+    max_date = fmt_date(summary.loc[0, "max_dx_date"])
 
-    c1, c2, c3, c4 = st.columns(4)
+    c1, c2, c3 = st.columns(3)
     c1.metric("Diagnosis rows", compact_int(diagnosis_rows))
     c2.metric("Approx patients", compact_int(approx_patients))
     if pd.notna(approx_encounters):
         c3.metric("Approx encounters", compact_int(int(approx_encounters)))
-    c4.metric("Date span", f"{summary.loc[0, 'min_dx_date']} to {summary.loc[0, 'max_dx_date']}")
-    st.caption(f"Full counts: {diagnosis_rows:,} diagnosis rows; approx {approx_patients:,} patients.")
+    st.caption(f"Full counts: {diagnosis_rows:,} diagnosis rows; approx {approx_patients:,} patients. Diagnosis date span: {min_date} to {max_date}.")
 
     st.subheader("Cohort definition")
     st.json({"preset": preset, "prefixes": prefixes, "dx_type_filter": selected_dx_types, "date_column": dx_date_col, "date_filter": [start_text, end_text] if use_dates else []})
 
     dx_type_expr = f"cast({quote_ident(dx_type_col)} as varchar)" if dx_type_col else "''"
+
+    if dx_type_col:
+        type_sql = f"""
+        select
+          {dx_type_expr} as dx_type,
+          count(*) as diagnosis_rows,
+          approx_count_distinct({quote_ident(patid_col)}) as approx_patients
+        from {diagnosis_expr}
+        where {where_sql}
+        group by 1
+        order by diagnosis_rows desc
+        """
+        type_df = con.execute(type_sql).df()
+        st.subheader("Diagnosis-code system mix")
+        st.dataframe(safe_display(type_df, settings), use_container_width=True, hide_index=True)
+
+    if dx_date_col:
+        year_sql = f"""
+        select
+          year({quote_ident(dx_date_col)}) as dx_year,
+          {dx_type_expr} as dx_type,
+          count(*) as diagnosis_rows,
+          approx_count_distinct({quote_ident(patid_col)}) as approx_patients
+        from {diagnosis_expr}
+        where {where_sql} and {quote_ident(dx_date_col)} is not null
+        group by 1, 2
+        order by 1, 2
+        """
+        year_df = con.execute(year_sql).df()
+        st.subheader("Diagnosis-year trend")
+        st.dataframe(safe_display(year_df, settings), use_container_width=True, hide_index=True)
+        if not year_df.empty:
+            st.plotly_chart(px.line(year_df, x="dx_year", y="diagnosis_rows", color="dx_type", markers=True, title="Matching diagnosis rows by year"), use_container_width=True)
+
     code_sql = f"""
     select
       cast({quote_ident(dx_col)} as varchar) as dx,
