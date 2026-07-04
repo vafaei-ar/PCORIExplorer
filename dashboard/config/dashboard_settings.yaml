@@ -5,6 +5,7 @@ app:
   default_data_root: ../data/CDM61_Feb022026
   default_parquet_root: ../data/pcori_parquet
   default_audit_dir: outputs/audit
+  default_profile_dir: outputs/profile
 
 auth:
   enabled: false
