@@ -22,6 +22,19 @@ def read_csv_if_exists(path: str) -> pd.DataFrame:
     return pd.read_csv(p)
 
 
+def compact_int(value: int | float | None) -> str:
+    if value is None or pd.isna(value):
+        return ""
+    value = float(value)
+    if abs(value) >= 1_000_000_000:
+        return f"{value / 1_000_000_000:.2f}B"
+    if abs(value) >= 1_000_000:
+        return f"{value / 1_000_000:.1f}M"
+    if abs(value) >= 1_000:
+        return f"{value / 1_000:.1f}K"
+    return f"{value:.0f}"
+
+
 def add_quality_flags(date_ranges: pd.DataFrame, key_missingness: pd.DataFrame) -> pd.DataFrame:
     flags = []
     if not date_ranges.empty:
@@ -35,8 +48,12 @@ def add_quality_flags(date_ranges: pd.DataFrame, key_missingness: pd.DataFrame) 
             min_dt = getattr(row, "min_dt", pd.NaT)
             max_dt = getattr(row, "max_dt", pd.NaT)
             non_null_pct = float(getattr(row, "non_null_pct", 0) or 0)
-            if pd.notna(min_dt) and min_dt.year < 1990:
-                flags.append({"severity": "review", "table": table, "field": column, "issue": f"Very early minimum date: {min_dt.date()}"})
+            col_upper = str(column).upper()
+            if pd.notna(min_dt):
+                if col_upper == "BIRTH_DATE" and min_dt.year < 1900:
+                    flags.append({"severity": "review", "table": table, "field": column, "issue": f"Birth date before 1900: {min_dt.date()}"})
+                elif col_upper != "BIRTH_DATE" and min_dt.year < 2000:
+                    flags.append({"severity": "review", "table": table, "field": column, "issue": f"Clinical date before 2000: {min_dt.date()}"})
             if pd.notna(max_dt) and max_dt > today + pd.Timedelta(days=366):
                 flags.append({"severity": "review", "table": table, "field": column, "issue": f"Date extends >1 year into the future: {max_dt.date()}"})
             if non_null_pct < 50:
@@ -85,13 +102,14 @@ def main() -> None:
     distinct_patient_cols = [c for c in table_profile.columns if "distinct_patid" in c]
     patient_metric = ""
     if distinct_patient_cols:
-        patient_metric = f"{int(table_profile[distinct_patient_cols[0]].fillna(0).max()):,}"
+        patient_metric = compact_int(table_profile[distinct_patient_cols[0]].fillna(0).max())
 
     c1, c2, c3, c4 = st.columns(4)
     c1.metric("Profiled tables", profiled)
-    c2.metric("Rows", f"{total_rows:,}")
+    c2.metric("Rows", compact_int(total_rows))
     c3.metric("Parquet size", f"{total_size_gb:.1f} GB")
-    c4.metric("Patients", patient_metric or "see table")
+    c4.metric("Approx patients", patient_metric or "see table")
+    st.caption(f"Full row count: {total_rows:,}. Patient count is approximate unless profiling is rerun with --exact-distinct.")
 
     st.info(
         "This page uses aggregate outputs only. Counts and percentages are for exploration and data-quality review, not final cohort definitions."
@@ -103,8 +121,11 @@ def main() -> None:
         st.dataframe(flags, use_container_width=True, hide_index=True)
 
     st.subheader("Table profile")
+    visible_cols = [c for c in ["table", "domain", "label", "row_count", "n_columns", "parquet_size_mb", "status"] if c in table_profile.columns]
+    hidden_cols = [c for c in table_profile.columns if c not in visible_cols]
+    display_df = table_profile[visible_cols + hidden_cols]
     st.dataframe(
-        table_profile,
+        display_df,
         use_container_width=True,
         hide_index=True,
         column_config={
