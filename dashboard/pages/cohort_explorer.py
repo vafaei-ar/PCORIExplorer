@@ -102,7 +102,7 @@ def safe_display(df: pd.DataFrame, settings: dict) -> pd.DataFrame:
     threshold = int(settings.get("privacy", {}).get("small_cell_threshold", 11))
     return apply_small_cell_suppression(
         df,
-        count_columns=("n", "rows", "diagnosis_rows", "patient_count", "encounter_count", "approx_patients", "approx_encounters"),
+        count_columns=("n", "rows", "diagnosis_rows", "patient_count", "encounter_count"),
         threshold=threshold,
     )
 
@@ -187,16 +187,16 @@ def main() -> None:
     where_parts = [prefix_condition(dx_col, prefixes), optional_filter(dx_type_col, selected_dx_types), date_condition(dx_date_col, start_text, end_text)]
     where_sql = " and ".join(f"({x})" for x in where_parts if x)
 
-    distinct_patient_expr = f"approx_count_distinct({quote_ident(patid_col)})"
-    distinct_enc_expr = f"approx_count_distinct({quote_ident(encid_col)})" if encid_col else "null"
+    distinct_patient_expr = f"count(distinct {quote_ident(patid_col)})"
+    distinct_enc_expr = f"count(distinct {quote_ident(encid_col)})" if encid_col else "null"
     date_min_expr = f"min({quote_ident(dx_date_col)})" if dx_date_col else "null"
     date_max_expr = f"max({quote_ident(dx_date_col)})" if dx_date_col else "null"
 
     summary_sql = f"""
     select
       count(*) as diagnosis_rows,
-      {distinct_patient_expr} as approx_patients,
-      {distinct_enc_expr} as approx_encounters,
+      {distinct_patient_expr} as patient_count,
+      {distinct_enc_expr} as encounter_count,
       {date_min_expr} as min_dx_date,
       {date_max_expr} as max_dx_date
     from {diagnosis_expr}
@@ -211,17 +211,17 @@ def main() -> None:
         st.stop()
 
     diagnosis_rows = int(summary.loc[0, "diagnosis_rows"])
-    approx_patients = int(summary.loc[0, "approx_patients"])
-    approx_encounters = summary.loc[0, "approx_encounters"]
+    patient_count = int(summary.loc[0, "patient_count"])
+    encounter_count = summary.loc[0, "encounter_count"]
     min_date = fmt_date(summary.loc[0, "min_dx_date"])
     max_date = fmt_date(summary.loc[0, "max_dx_date"])
 
     c1, c2, c3 = st.columns(3)
     c1.metric("Diagnosis rows", compact_int(diagnosis_rows))
-    c2.metric("Approx patients", compact_int(approx_patients))
-    if pd.notna(approx_encounters):
-        c3.metric("Approx encounters", compact_int(int(approx_encounters)))
-    st.caption(f"Full counts: {diagnosis_rows:,} diagnosis rows; approx {approx_patients:,} patients. Diagnosis date span: {min_date} to {max_date}.")
+    c2.metric("Patients", compact_int(patient_count))
+    if pd.notna(encounter_count):
+        c3.metric("Encounters", compact_int(int(encounter_count)))
+    st.caption(f"Full counts: {diagnosis_rows:,} diagnosis rows; {patient_count:,} patients. Diagnosis date span: {min_date} to {max_date}.")
 
     st.subheader("Cohort definition")
     st.json({"preset": preset, "prefixes": prefixes, "dx_type_filter": selected_dx_types, "date_column": dx_date_col, "date_filter": [start_text, end_text] if use_dates else []})
@@ -233,7 +233,7 @@ def main() -> None:
         select
           {dx_type_expr} as dx_type,
           count(*) as diagnosis_rows,
-          approx_count_distinct({quote_ident(patid_col)}) as approx_patients
+          count(distinct {quote_ident(patid_col)}) as patient_count
         from {diagnosis_expr}
         where {where_sql}
         group by 1
@@ -243,7 +243,7 @@ def main() -> None:
         type_df["dx_type"] = type_df["dx_type"].astype(str)
         type_df["code_system"] = type_df["dx_type"].map(code_system_label)
         st.subheader("Diagnosis-code system mix")
-        show_df(safe_display(type_df[["code_system", "dx_type", "diagnosis_rows", "approx_patients"]], settings))
+        show_df(safe_display(type_df[["code_system", "dx_type", "diagnosis_rows", "patient_count"]], settings))
         if not type_df.empty:
             fig = px.bar(type_df, x="code_system", y="diagnosis_rows", title="Diagnosis rows by code system", labels={"code_system": "Code system", "diagnosis_rows": "Diagnosis rows"})
             fig.update_xaxes(type="category")
@@ -255,7 +255,7 @@ def main() -> None:
           year({quote_ident(dx_date_col)}) as dx_year,
           {dx_type_expr} as dx_type,
           count(*) as diagnosis_rows,
-          approx_count_distinct({quote_ident(patid_col)}) as approx_patients
+          count(distinct {quote_ident(patid_col)}) as patient_count
         from {diagnosis_expr}
         where {where_sql} and {quote_ident(dx_date_col)} is not null
         group by 1, 2
@@ -266,7 +266,7 @@ def main() -> None:
         year_df["code_system"] = year_df["dx_type"].map(code_system_label)
         st.subheader("Diagnosis-year trend")
         st.caption("Small early-year counts and the latest partial year should be interpreted as data-coverage/transition signals, not clinical incidence.")
-        show_df(safe_display(year_df[["dx_year", "code_system", "dx_type", "diagnosis_rows", "approx_patients"]], settings))
+        show_df(safe_display(year_df[["dx_year", "code_system", "dx_type", "diagnosis_rows", "patient_count"]], settings))
         if not year_df.empty:
             fig = px.line(year_df, x="dx_year", y="diagnosis_rows", color="code_system", markers=True, title="Matching diagnosis rows by year", labels={"dx_year": "Diagnosis year", "diagnosis_rows": "Diagnosis rows", "code_system": "Code system"})
             fig.update_xaxes(dtick=1)
@@ -277,7 +277,7 @@ def main() -> None:
       cast({quote_ident(dx_col)} as varchar) as dx,
       {dx_type_expr} as dx_type,
       count(*) as diagnosis_rows,
-      approx_count_distinct({quote_ident(patid_col)}) as approx_patients
+      count(distinct {quote_ident(patid_col)}) as patient_count
     from {diagnosis_expr}
     where {where_sql}
     group by 1, 2
@@ -288,7 +288,7 @@ def main() -> None:
     code_df["dx_type"] = code_df["dx_type"].astype(str)
     code_df["code_system"] = code_df["dx_type"].map(code_system_label)
     st.subheader("Top diagnosis codes")
-    show_df(safe_display(code_df[["dx", "code_system", "dx_type", "diagnosis_rows", "approx_patients"]], settings))
+    show_df(safe_display(code_df[["dx", "code_system", "dx_type", "diagnosis_rows", "patient_count"]], settings))
     if not code_df.empty:
         chart_df = code_df.head(25).copy()
         chart_df["dx_label"] = chart_df["dx"].astype(str) + " (" + chart_df["code_system"].astype(str) + ")"
