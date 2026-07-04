@@ -22,6 +22,43 @@ def read_csv_if_exists(path: str) -> pd.DataFrame:
     return pd.read_csv(p)
 
 
+def add_quality_flags(date_ranges: pd.DataFrame, key_missingness: pd.DataFrame) -> pd.DataFrame:
+    flags = []
+    if not date_ranges.empty:
+        df = date_ranges.copy()
+        df["min_dt"] = pd.to_datetime(df.get("min_value"), errors="coerce")
+        df["max_dt"] = pd.to_datetime(df.get("max_value"), errors="coerce")
+        today = pd.Timestamp.today().normalize()
+        for row in df.itertuples(index=False):
+            table = getattr(row, "table", "")
+            column = getattr(row, "column_name", "")
+            min_dt = getattr(row, "min_dt", pd.NaT)
+            max_dt = getattr(row, "max_dt", pd.NaT)
+            non_null_pct = float(getattr(row, "non_null_pct", 0) or 0)
+            if pd.notna(min_dt) and min_dt.year < 1990:
+                flags.append({"severity": "review", "table": table, "field": column, "issue": f"Very early minimum date: {min_dt.date()}"})
+            if pd.notna(max_dt) and max_dt > today + pd.Timedelta(days=366):
+                flags.append({"severity": "review", "table": table, "field": column, "issue": f"Date extends >1 year into the future: {max_dt.date()}"})
+            if non_null_pct < 50:
+                flags.append({"severity": "informational", "table": table, "field": column, "issue": f"Low date completeness: {non_null_pct:.1f}% non-null"})
+    if not key_missingness.empty and "missing_pct" in key_missingness.columns:
+        miss = key_missingness.copy()
+        for row in miss[miss["missing_pct"] >= 90].itertuples(index=False):
+            flags.append({
+                "severity": "informational",
+                "table": getattr(row, "table", ""),
+                "field": getattr(row, "column_name", ""),
+                "issue": f"High missingness: {float(getattr(row, 'missing_pct', 0) or 0):.1f}%",
+            })
+    return pd.DataFrame(flags)
+
+
+def download_button(label: str, df: pd.DataFrame, filename: str) -> None:
+    if df.empty:
+        return
+    st.download_button(label, data=df.to_csv(index=False), file_name=filename, mime="text/csv")
+
+
 def main() -> None:
     settings = get_settings()
     profile_dir = Path(settings["app"].get("profile_dir", ROOT / "outputs" / "profile"))
@@ -36,21 +73,46 @@ def main() -> None:
     if table_profile.empty:
         st.warning("No profile outputs found yet.")
         st.code(
-            "python scripts/profile_parquet_tables.py --parquet-root ../data/pcori_parquet --out outputs/profile --verify outputs/audit/parquet_verify.csv"
+            "python scripts/profile_parquet_tables.py --parquet-root ../data/pcori_parquet --out outputs/profile --verify outputs/audit/parquet_verify.csv --memory-limit 64GB"
         )
         st.stop()
 
+    if "row_count" in table_profile.columns:
+        table_profile = table_profile.sort_values("row_count", ascending=False)
     profiled = int((table_profile.get("status", "") == "profiled").sum()) if "status" in table_profile else len(table_profile)
     total_rows = int(table_profile.get("row_count", pd.Series(dtype="float64")).fillna(0).sum())
     total_size_gb = table_profile.get("parquet_size_mb", pd.Series(dtype="float64")).fillna(0).sum() / 1024
+    distinct_patient_cols = [c for c in table_profile.columns if "distinct_patid" in c]
+    patient_metric = ""
+    if distinct_patient_cols:
+        patient_metric = f"{int(table_profile[distinct_patient_cols[0]].fillna(0).max()):,}"
 
-    c1, c2, c3 = st.columns(3)
+    c1, c2, c3, c4 = st.columns(4)
     c1.metric("Profiled tables", profiled)
     c2.metric("Rows", f"{total_rows:,}")
     c3.metric("Parquet size", f"{total_size_gb:.1f} GB")
+    c4.metric("Patients", patient_metric or "see table")
+
+    st.info(
+        "This page uses aggregate outputs only. Counts and percentages are for exploration and data-quality review, not final cohort definitions."
+    )
+
+    flags = add_quality_flags(date_ranges, key_missingness)
+    if not flags.empty:
+        st.subheader("Data-quality flags")
+        st.dataframe(flags, use_container_width=True, hide_index=True)
 
     st.subheader("Table profile")
-    st.dataframe(table_profile, use_container_width=True, hide_index=True)
+    st.dataframe(
+        table_profile,
+        use_container_width=True,
+        hide_index=True,
+        column_config={
+            "row_count": st.column_config.NumberColumn("Rows", format="%d"),
+            "parquet_size_mb": st.column_config.NumberColumn("Parquet MB", format="%.2f"),
+        },
+    )
+    download_button("Download table profile", table_profile, "table_profile.csv")
     if "row_count" in table_profile.columns:
         chart_df = table_profile.sort_values("row_count", ascending=False).head(15)
         st.plotly_chart(px.bar(chart_df, x="table", y="row_count", title="Rows by table"), use_container_width=True)
@@ -62,6 +124,7 @@ def main() -> None:
         table_filter = st.multiselect("Filter date ranges by table", sorted(date_ranges["table"].dropna().unique().tolist()))
         df = date_ranges if not table_filter else date_ranges[date_ranges["table"].isin(table_filter)]
         st.dataframe(df, use_container_width=True, hide_index=True)
+        download_button("Download date ranges", date_ranges, "date_ranges.csv")
 
     st.subheader("Key missingness")
     if key_missingness.empty:
@@ -69,6 +132,7 @@ def main() -> None:
     else:
         missing_df = key_missingness.sort_values(["missing_pct", "table", "column_name"], ascending=[False, True, True])
         st.dataframe(missing_df, use_container_width=True, hide_index=True)
+        download_button("Download key missingness", key_missingness, "key_missingness.csv")
 
     st.subheader("Top grouped values")
     if top_values.empty:
@@ -79,7 +143,9 @@ def main() -> None:
         subset = top_values[top_values["table"] == selected_table]
         cols = sorted(subset["column_name"].dropna().unique().tolist())
         selected_col = st.selectbox("Column", cols)
-        st.dataframe(subset[subset["column_name"] == selected_col], use_container_width=True, hide_index=True)
+        filtered = subset[subset["column_name"] == selected_col]
+        st.dataframe(filtered, use_container_width=True, hide_index=True)
+        download_button("Download all top values", top_values, "top_values.csv")
 
 
 main()
