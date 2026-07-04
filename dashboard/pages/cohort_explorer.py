@@ -26,6 +26,15 @@ PRESETS = {
 }
 
 
+def code_system_label(value: object) -> str:
+    text = str(value).strip()
+    if text == "09":
+        return "ICD-9-CM"
+    if text == "10":
+        return "ICD-10-CM"
+    return text or "Unknown"
+
+
 @st.cache_resource(show_spinner=False)
 def get_connection(memory_limit: str):
     return connect({"performance": {"duckdb_memory_limit": memory_limit}})
@@ -231,10 +240,13 @@ def main() -> None:
         order by diagnosis_rows desc
         """
         type_df = con.execute(type_sql).df()
+        type_df["dx_type"] = type_df["dx_type"].astype(str)
+        type_df["code_system"] = type_df["dx_type"].map(code_system_label)
         st.subheader("Diagnosis-code system mix")
-        show_df(safe_display(type_df, settings))
+        show_df(safe_display(type_df[["code_system", "dx_type", "diagnosis_rows", "approx_patients"]], settings))
         if not type_df.empty:
-            fig = px.bar(type_df, x="dx_type", y="diagnosis_rows", title="Diagnosis rows by code system")
+            fig = px.bar(type_df, x="code_system", y="diagnosis_rows", title="Diagnosis rows by code system", labels={"code_system": "Code system", "diagnosis_rows": "Diagnosis rows"})
+            fig.update_xaxes(type="category")
             st.plotly_chart(fig, width="stretch")
 
     if dx_date_col:
@@ -250,11 +262,14 @@ def main() -> None:
         order by 1, 2
         """
         year_df = con.execute(year_sql).df()
+        year_df["dx_type"] = year_df["dx_type"].astype(str)
+        year_df["code_system"] = year_df["dx_type"].map(code_system_label)
         st.subheader("Diagnosis-year trend")
         st.caption("Small early-year counts and the latest partial year should be interpreted as data-coverage/transition signals, not clinical incidence.")
-        show_df(safe_display(year_df, settings))
+        show_df(safe_display(year_df[["dx_year", "code_system", "dx_type", "diagnosis_rows", "approx_patients"]], settings))
         if not year_df.empty:
-            fig = px.line(year_df, x="dx_year", y="diagnosis_rows", color="dx_type", markers=True, title="Matching diagnosis rows by year")
+            fig = px.line(year_df, x="dx_year", y="diagnosis_rows", color="code_system", markers=True, title="Matching diagnosis rows by year", labels={"dx_year": "Diagnosis year", "diagnosis_rows": "Diagnosis rows", "code_system": "Code system"})
+            fig.update_xaxes(dtick=1)
             st.plotly_chart(fig, width="stretch")
 
     code_sql = f"""
@@ -270,20 +285,22 @@ def main() -> None:
     limit 100
     """
     code_df = con.execute(code_sql).df()
+    code_df["dx_type"] = code_df["dx_type"].astype(str)
+    code_df["code_system"] = code_df["dx_type"].map(code_system_label)
     st.subheader("Top diagnosis codes")
-    show_df(safe_display(code_df, settings))
+    show_df(safe_display(code_df[["dx", "code_system", "dx_type", "diagnosis_rows", "approx_patients"]], settings))
     if not code_df.empty:
         chart_df = code_df.head(25).copy()
-        chart_df["dx_label"] = chart_df["dx"].astype(str) + " (" + chart_df["dx_type"].astype(str) + ")"
+        chart_df["dx_label"] = chart_df["dx"].astype(str) + " (" + chart_df["code_system"].astype(str) + ")"
         chart_df = chart_df.sort_values("diagnosis_rows", ascending=True)
         fig = px.bar(
             chart_df,
             x="diagnosis_rows",
             y="dx_label",
-            color="dx_type",
+            color="code_system",
             orientation="h",
             title="Top matching diagnosis codes",
-            labels={"dx_label": "Diagnosis code", "diagnosis_rows": "Diagnosis rows"},
+            labels={"dx_label": "Diagnosis code", "diagnosis_rows": "Diagnosis rows", "code_system": "Code system"},
         )
         st.plotly_chart(fig, width="stretch")
 
