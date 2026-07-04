@@ -36,9 +36,11 @@ def get_settings() -> dict[str, Any]:
     data_root = os.environ.get("PCORI_DATA_ROOT", app.get("default_data_root"))
     parquet_root = os.environ.get("PCORI_PARQUET_ROOT", app.get("default_parquet_root"))
     audit_dir = os.environ.get("PCORI_AUDIT_DIR", app.get("default_audit_dir"))
+    profile_dir = os.environ.get("PCORI_PROFILE_DIR", app.get("default_profile_dir", "outputs/profile"))
     app["data_root"] = str(_resolve_path(data_root, base=PROJECT_ROOT))
     app["parquet_root"] = str(_resolve_path(parquet_root, base=PROJECT_ROOT))
     app["audit_dir"] = str(_resolve_path(audit_dir, base=PROJECT_ROOT))
+    app["profile_dir"] = str(_resolve_path(profile_dir, base=PROJECT_ROOT))
     return settings
 
 
@@ -50,5 +52,6 @@ def get_cdm_tables() -> dict[str, Any]:
 def ensure_output_dirs(settings: dict[str, Any] | None = None) -> None:
     settings = settings or get_settings()
     Path(settings["app"]["audit_dir"]).mkdir(parents=True, exist_ok=True)
+    Path(settings["app"].get("profile_dir", PROJECT_ROOT / "outputs" / "profile")).mkdir(parents=True, exist_ok=True)
     (PROJECT_ROOT / "outputs" / "concepts").mkdir(parents=True, exist_ok=True)
     (PROJECT_ROOT / "outputs" / "queries").mkdir(parents=True, exist_ok=True)
