@@ -116,6 +116,10 @@ def get_distinct_values(con, expr: str, column: str | None, limit: int = 200) ->
         return []
 
 
+def show_df(df: pd.DataFrame) -> None:
+    st.dataframe(df, width="stretch", hide_index=True)
+
+
 def main() -> None:
     settings = get_settings()
     memory = settings.get("performance", {}).get("duckdb_memory_limit", "8GB")
@@ -228,7 +232,10 @@ def main() -> None:
         """
         type_df = con.execute(type_sql).df()
         st.subheader("Diagnosis-code system mix")
-        st.dataframe(safe_display(type_df, settings), use_container_width=True, hide_index=True)
+        show_df(safe_display(type_df, settings))
+        if not type_df.empty:
+            fig = px.bar(type_df, x="dx_type", y="diagnosis_rows", title="Diagnosis rows by code system")
+            st.plotly_chart(fig, width="stretch")
 
     if dx_date_col:
         year_sql = f"""
@@ -244,9 +251,11 @@ def main() -> None:
         """
         year_df = con.execute(year_sql).df()
         st.subheader("Diagnosis-year trend")
-        st.dataframe(safe_display(year_df, settings), use_container_width=True, hide_index=True)
+        st.caption("Small early-year counts and the latest partial year should be interpreted as data-coverage/transition signals, not clinical incidence.")
+        show_df(safe_display(year_df, settings))
         if not year_df.empty:
-            st.plotly_chart(px.line(year_df, x="dx_year", y="diagnosis_rows", color="dx_type", markers=True, title="Matching diagnosis rows by year"), use_container_width=True)
+            fig = px.line(year_df, x="dx_year", y="diagnosis_rows", color="dx_type", markers=True, title="Matching diagnosis rows by year")
+            st.plotly_chart(fig, width="stretch")
 
     code_sql = f"""
     select
@@ -262,9 +271,21 @@ def main() -> None:
     """
     code_df = con.execute(code_sql).df()
     st.subheader("Top diagnosis codes")
-    st.dataframe(safe_display(code_df, settings), use_container_width=True, hide_index=True)
+    show_df(safe_display(code_df, settings))
     if not code_df.empty:
-        st.plotly_chart(px.bar(code_df.head(25), x="dx", y="diagnosis_rows", color="dx_type", title="Top matching diagnosis codes"), use_container_width=True)
+        chart_df = code_df.head(25).copy()
+        chart_df["dx_label"] = chart_df["dx"].astype(str) + " (" + chart_df["dx_type"].astype(str) + ")"
+        chart_df = chart_df.sort_values("diagnosis_rows", ascending=True)
+        fig = px.bar(
+            chart_df,
+            x="diagnosis_rows",
+            y="dx_label",
+            color="dx_type",
+            orientation="h",
+            title="Top matching diagnosis codes",
+            labels={"dx_label": "Diagnosis code", "diagnosis_rows": "Diagnosis rows"},
+        )
+        st.plotly_chart(fig, width="stretch")
 
     if not run_breakdowns:
         st.stop()
@@ -296,9 +317,9 @@ def main() -> None:
                     order by patient_count desc
                     """
                     df = con.execute(sql).df()
-                    st.dataframe(safe_display(df, settings), use_container_width=True, hide_index=True)
+                    show_df(safe_display(df, settings))
                     if not df.empty:
-                        st.plotly_chart(px.bar(df, x="value", y="patient_count", title=f"Cohort by {col}"), use_container_width=True)
+                        st.plotly_chart(px.bar(df, x="value", y="patient_count", title=f"Cohort by {col}"), width="stretch")
 
     if encounter_path is not None and encid_col:
         enc_expr = read_parquet_expr(encounter_path)
@@ -328,7 +349,7 @@ def main() -> None:
                 """
                 df = con.execute(sql).df()
                 st.markdown(f"**{col}**")
-                st.dataframe(safe_display(df, settings), use_container_width=True, hide_index=True)
+                show_df(safe_display(df, settings))
             if admit_date:
                 sql = f"""
                 with {cohort_enc_cte}
@@ -341,9 +362,9 @@ def main() -> None:
                 """
                 df = con.execute(sql).df()
                 st.markdown("**Admission year**")
-                st.dataframe(safe_display(df, settings), use_container_width=True, hide_index=True)
+                show_df(safe_display(df, settings))
                 if not df.empty:
-                    st.plotly_chart(px.line(df, x="admit_year", y="encounter_count", markers=True, title="Cohort encounters by admission year"), use_container_width=True)
+                    st.plotly_chart(px.line(df, x="admit_year", y="encounter_count", markers=True, title="Cohort encounters by admission year"), width="stretch")
 
 
 main()
