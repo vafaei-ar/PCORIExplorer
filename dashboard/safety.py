@@ -17,6 +17,7 @@ DEFAULT_IDENTIFIER_COLUMNS = {
     "CONDITIONID",
     "VITALID",
     "VX_RECORD_ID",
+    "IMMUNIZATIONID",
 }
 
 
@@ -33,16 +34,16 @@ def drop_identifier_columns(df: pd.DataFrame, settings: dict | None = None) -> p
     return df.loc[:, keep].copy()
 
 
-def suppress_count_value(value: int | float | None, threshold: int = 11) -> str | int:
+def suppress_count_value(value: int | float | None, threshold: int = 11) -> str:
     if value is None or pd.isna(value):
         return ""
     try:
         n = int(value)
     except (TypeError, ValueError):
-        return value
+        return str(value)
     if 0 < n < threshold:
         return f"<{threshold}"
-    return n
+    return str(n)
 
 
 def apply_small_cell_suppression(
@@ -55,5 +56,5 @@ def apply_small_cell_suppression(
     for candidate in count_columns:
         col = lower_map.get(candidate.lower())
         if col is not None:
-            out[col] = out[col].map(lambda x: suppress_count_value(x, threshold))
+            out[col] = out[col].map(lambda x: suppress_count_value(x, threshold)).astype("string")
     return out
