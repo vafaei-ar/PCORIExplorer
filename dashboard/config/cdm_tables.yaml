@@ -1,0 +1,184 @@
+tables:
+  demographic:
+    domain: patient
+    label: DEMOGRAPHIC
+    expected_file: demographic.sas7bdat
+    primary_key: [PATID]
+    required_columns: [PATID]
+    date_columns: [BIRTH_DATE]
+    code_columns: []
+    geography_columns: [ZIP_CODE, RUCA_CODE]
+    person_id: PATID
+    description: One record per patient with direct patient attributes. Local datamart also includes ZIP_CODE and RUCA_CODE.
+
+  encounter:
+    domain: utilization
+    label: ENCOUNTER
+    expected_file: encounter.sas7bdat
+    primary_key: [ENCOUNTERID]
+    required_columns: [ENCOUNTERID, PATID, ADMIT_DATE, ENC_TYPE]
+    date_columns: [ADMIT_DATE, DISCHARGE_DATE]
+    code_columns: [ENC_TYPE, DRG, PAYER_TYPE_PRIMARY, PAYER_TYPE_SECONDARY, FACILITY_TYPE]
+    person_id: PATID
+    encounter_id: ENCOUNTERID
+    description: Healthcare interactions between patients and providers.
+
+  diagnosis:
+    domain: diagnosis
+    label: DIAGNOSIS
+    expected_file: diagnosis.sas7bdat
+    primary_key: [DIAGNOSISID]
+    required_columns: [PATID, DX, DX_TYPE]
+    date_columns: [DX_DATE, ADMIT_DATE]
+    code_columns: [DX]
+    code_type_columns: [DX_TYPE]
+    person_id: PATID
+    encounter_id: ENCOUNTERID
+    description: Diagnosis codes recorded during care.
+
+  procedures:
+    domain: procedure
+    label: PROCEDURES
+    expected_file: procedures.sas7bdat
+    primary_key: [PROCEDURESID]
+    required_columns: [PATID, PX, PX_TYPE]
+    date_columns: [PX_DATE, ADMIT_DATE]
+    code_columns: [PX]
+    code_type_columns: [PX_TYPE]
+    person_id: PATID
+    encounter_id: ENCOUNTERID
+    description: Procedure codes recorded during care.
+
+  vital:
+    domain: clinical
+    label: VITAL
+    expected_file: vital.sas7bdat
+    primary_key: [VITALID]
+    required_columns: [PATID, MEASURE_DATE]
+    date_columns: [MEASURE_DATE]
+    code_columns: [VITAL_SOURCE, SMOKING, TOBACCO, TOBACCO_TYPE]
+    person_id: PATID
+    encounter_id: ENCOUNTERID
+    description: Height, weight, blood pressure, tobacco, and related vital measures.
+
+  lab_result_cm:
+    domain: clinical
+    label: LAB_RESULT_CM
+    expected_file: lab_result_cm.sas7bdat
+    primary_key: [LAB_RESULT_CM_ID]
+    required_columns: [PATID, RESULT_DATE]
+    date_columns: [LAB_ORDER_DATE, SPECIMEN_DATE, RESULT_DATE]
+    code_columns: [LAB_LOINC, LAB_PX, RESULT_SNOMED]
+    code_type_columns: [LAB_LOINC_SOURCE, LAB_PX_TYPE]
+    person_id: PATID
+    encounter_id: ENCOUNTERID
+    description: Laboratory results using PCORnet lab result structure.
+
+  prescribing:
+    domain: medication
+    label: PRESCRIBING
+    expected_file: prescribing.sas7bdat
+    primary_key: [PRESCRIBINGID]
+    required_columns: [PATID, RX_ORDER_DATE]
+    date_columns: [RX_ORDER_DATE, RX_START_DATE, RX_END_DATE]
+    code_columns: [RXNORM_CUI, RX_BASIS, RX_SOURCE]
+    person_id: PATID
+    encounter_id: ENCOUNTERID
+    description: Medication orders and prescriptions.
+
+  dispensing:
+    domain: medication
+    label: DISPENSING
+    expected_file: dispensing.sas7bdat
+    primary_key: [DISPENSINGID]
+    required_columns: [PATID, DISPENSE_DATE]
+    date_columns: [DISPENSE_DATE]
+    code_columns: [NDC, DISPENSE_SOURCE, DISPENSE_ROUTE]
+    person_id: PATID
+    description: Outpatient/community pharmacy dispensing records.
+
+  med_admin:
+    domain: medication
+    label: MED_ADMIN
+    expected_file: med_admin.sas7bdat
+    primary_key: [MEDADMINID]
+    required_columns: [PATID, MEDADMIN_START_DATE]
+    date_columns: [MEDADMIN_START_DATE, MEDADMIN_STOP_DATE]
+    code_columns: [MEDADMIN_CODE, MEDADMIN_TYPE, MEDADMIN_SOURCE]
+    person_id: PATID
+    encounter_id: ENCOUNTERID
+    description: Medications administered in healthcare settings.
+
+  condition:
+    domain: condition
+    label: CONDITION
+    expected_file: condition.sas7bdat
+    primary_key: [CONDITIONID]
+    required_columns: [PATID, CONDITION, CONDITION_TYPE]
+    date_columns: [REPORT_DATE, RESOLVE_DATE, ONSET_DATE]
+    code_columns: [CONDITION, CONDITION_STATUS, CONDITION_SOURCE]
+    code_type_columns: [CONDITION_TYPE]
+    person_id: PATID
+    encounter_id: ENCOUNTERID
+    description: Problem list and condition records.
+
+  death:
+    domain: outcome
+    label: DEATH
+    expected_file: death.sas7bdat
+    primary_key: [PATID]
+    required_columns: [PATID]
+    date_columns: [DEATH_DATE]
+    code_columns: [DEATH_SOURCE, DEATH_MATCH_CONFIDENCE]
+    person_id: PATID
+    description: Death records and death source.
+
+  death_cause:
+    domain: outcome
+    label: DEATH_CAUSE
+    expected_file: death_cause.sas7bdat
+    primary_key: [PATID, DEATH_CAUSE]
+    required_columns: [PATID, DEATH_CAUSE]
+    date_columns: []
+    code_columns: [DEATH_CAUSE, DEATH_CAUSE_CODE, DEATH_CAUSE_TYPE, DEATH_CAUSE_SOURCE]
+    person_id: PATID
+    description: Cause of death records. This audited datamart currently has zero rows.
+
+  immunization:
+    domain: clinical
+    label: IMMUNIZATION
+    expected_file: immunization.sas7bdat
+    primary_key: [IMMUNIZATIONID]
+    required_columns: [PATID, VX_ADMIN_DATE]
+    date_columns: [VX_RECORD_DATE, VX_ADMIN_DATE, VX_EXP_DATE]
+    code_columns: [VX_CODE, VX_STATUS, VX_SOURCE, VX_ROUTE, VX_MANUFACTURER]
+    code_type_columns: [VX_CODE_TYPE]
+    person_id: PATID
+    encounter_id: ENCOUNTERID
+    description: Immunization records.
+
+  obs_clin:
+    domain: observation
+    label: OBS_CLIN
+    expected_file: obs_clin.sas7bdat
+    primary_key: [OBSCLINID]
+    required_columns: [PATID, OBSCLIN_START_DATE]
+    date_columns: [OBSCLIN_START_DATE, OBSCLIN_STOP_DATE]
+    code_columns: [OBSCLIN_CODE, OBSCLIN_RESULT_SNOMED, OBSCLIN_SOURCE]
+    code_type_columns: [OBSCLIN_TYPE]
+    person_id: PATID
+    encounter_id: ENCOUNTERID
+    description: Clinical observations.
+
+  obs_gen:
+    domain: observation
+    label: OBS_GEN
+    expected_file: obs_gen.sas7bdat
+    primary_key: [OBSGENID]
+    required_columns: [PATID, OBSGEN_START_DATE]
+    date_columns: [OBSGEN_START_DATE, OBSGEN_STOP_DATE]
+    code_columns: [OBSGEN_CODE, OBSGEN_TABLE_MODIFIED, OBSGEN_SOURCE]
+    code_type_columns: [OBSGEN_TYPE]
+    person_id: PATID
+    encounter_id: ENCOUNTERID
+    description: General observations.
